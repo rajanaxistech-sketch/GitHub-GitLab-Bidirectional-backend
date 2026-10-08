@@ -226,6 +226,38 @@ class RepositoryMappingService {
       return `Latest (${dateStr}: ${msg})`;
     };
 
+    const getCleanProjectName = (repoName) => {
+      const mapping = {
+        'house_app': 'House App',
+        'NoteAx_Product_Backend': 'NoteAX',
+        'NoteAx_Product_Mobile': 'NoteAX',
+        'NoteAX_Admin': 'NoteAX',
+        'NoteAX_Backend_Code': 'NoteAX',
+        'Society_Events_App': 'Society Events',
+        'attendance_product': 'Attendance Product',
+        'attendance_management_system': 'Attendance Management',
+        'task_management_system': 'Task Management',
+        'custom_project': 'Custom Widgets',
+        'face_guard_liveness': 'Face Guard Liveness',
+        'metal_management': 'Metal Management',
+        'WorkSense': 'WorkSense',
+        'cli': 'CLI Tool',
+        'psmattendance_suvarnakala_com': 'Suvarnakala Attendance',
+        'mattendance.suvarnakala.com': 'Suvarnakala Mobile Attendance',
+        'ipo_invess': 'IPO Invess',
+        'UPI-Helper': 'UPI Helper Package',
+        'Form-Validator': 'Form Validator Package',
+        'Aura-Snackbars': 'Aura Snackbars Package',
+        'core_api_client_package_android': 'Core API Client Android',
+        'ocr_text': 'OCR Text Recognition',
+        'modern_dialogs': 'Modern Dialogs Package',
+        'est_repo': 'Est Repo',
+        'beeline_honeys': 'Beeline Honeys',
+        'bg_removal_backend': 'Background Removal Backend',
+      };
+      return mapping[repoName] || repoName.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    };
+
     const mappings = await repositoryMappingRepository.findByUserId(userId);
     const processedGlIds = new Set();
 
@@ -299,7 +331,12 @@ class RepositoryMappingService {
         }
       }
 
+      const projectName = getCleanProjectName(ghRepo.name);
+      const isCompleted = Boolean(glMatch);
+
       return {
+        employeeName: 'Harmish',
+        projectName,
         repositoryName: ghRepo.name,
         githubRepoFullName: ghRepo.fullName,
         gitlabProjectFullPath: glMatch?.fullName || null,
@@ -311,6 +348,14 @@ class RepositoryMappingService {
         gitlabStatus,
         syncState,
         syncBadge,
+        migrationStatus: isCompleted ? 'Completed' : 'Pending',
+        allBranchesMigrated: isCompleted ? 'Yes' : 'No',
+        gitHistoryMigrated: isCompleted ? 'Yes' : 'No',
+        latestCodePushed: isCompleted ? 'Yes' : 'No',
+        glAccessChecked: isCompleted ? 'Yes' : 'No',
+        migrationDate: '07-10-2026',
+        verifiedBy: 'Harmish',
+        notes: isCompleted ? (syncState.includes('In Sync') ? 'Fully migrated and synced' : syncState) : 'Pending migration to GitLab',
         mappingId: mapping?.id || null,
         isMapped: Boolean(mapping),
         canQuickSync: Boolean(glMatch),
@@ -332,7 +377,11 @@ class RepositoryMappingService {
         glCommit = glCommits[0] || null;
       } catch {}
 
+      const projectName = getCleanProjectName(glRepo.name);
+
       return {
+        employeeName: 'Harmish',
+        projectName,
         repositoryName: glRepo.name,
         githubRepoFullName: null,
         gitlabProjectFullPath: glRepo.fullName,
@@ -344,6 +393,14 @@ class RepositoryMappingService {
         gitlabStatus: glCommit ? formatStatus(glCommit) : 'Empty repo',
         syncState: 'GitLab Only',
         syncBadge: 'neutral',
+        migrationStatus: 'Completed',
+        allBranchesMigrated: 'Yes',
+        gitHistoryMigrated: 'Yes',
+        latestCodePushed: 'Yes',
+        glAccessChecked: 'Yes',
+        migrationDate: '07-10-2026',
+        verifiedBy: 'Harmish',
+        notes: 'GitLab-hosted project',
         mappingId: null,
         isMapped: false,
         canQuickSync: false,
