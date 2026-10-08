@@ -300,7 +300,7 @@ class GitLabProvider extends GitProviderInterface {
         name,
         description: options.description || 'Synchronized repository',
         visibility: options.isPrivate ? 'private' : 'public',
-        initialize_with_readme: true,
+        initialize_with_readme: options.initializeWithReadme || false,
       });
 
       return {

@@ -20,7 +20,7 @@ class GitLabService {
     const scope = encodeURIComponent('api read_user write_repository');
     const redirectUri = encodeURIComponent(env.gitlab.callbackUrl);
 
-    return `https://gitlab.com/oauth/authorize?client_id=${env.gitlab.clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=${state}`;
+    return `${env.gitlab.baseUrl}/oauth/authorize?client_id=${env.gitlab.clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=${state}`;
   }
 
   /**
@@ -41,7 +41,7 @@ class GitLabService {
 
     // 1. Exchange code for access token
     const tokenRes = await axios.post(
-      'https://gitlab.com/oauth/token',
+      `${env.gitlab.baseUrl}/oauth/token`,
       {
         client_id: env.gitlab.clientId,
         client_secret: env.gitlab.clientSecret,

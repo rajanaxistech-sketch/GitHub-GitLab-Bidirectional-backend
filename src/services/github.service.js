@@ -207,9 +207,9 @@ class GitHubService {
   /**
    * Get list of repositories for connected GitHub user
    */
-  async getRepositories(userId) {
+  async getRepositories(userId, options = {}) {
     const provider = await providerFactory.getGitHubProvider(userId);
-    return provider.getRepositories();
+    return provider.getRepositories(options);
   }
 
   /**

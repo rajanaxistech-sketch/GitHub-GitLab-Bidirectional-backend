@@ -13,6 +13,11 @@ class RepositoryMappingController {
     return sendSuccess(res, 'Repository mappings retrieved successfully', mappings);
   }
 
+  async getAuditReport(req, res) {
+    const report = await repositoryMappingService.getAuditReport(req.user.id);
+    return sendSuccess(res, 'Repository audit report generated successfully', report);
+  }
+
   async getMappingById(req, res) {
     const mapping = await repositoryMappingService.getMappingById(req.user.id, req.params.id);
     return sendSuccess(res, 'Repository mapping retrieved successfully', mapping);
@@ -26,6 +31,11 @@ class RepositoryMappingController {
   async deleteMapping(req, res) {
     const result = await repositoryMappingService.deleteMapping(req.user.id, req.params.id);
     return sendSuccess(res, 'Repository mapping deleted successfully', result);
+  }
+
+  async autoCreateAndSync(req, res) {
+    const result = await repositoryMappingService.autoCreateAndSync(req.user.id, req.body);
+    return sendSuccess(res, 'Repository automatically created and sync established', result, HTTP_STATUS.CREATED);
   }
 }
 

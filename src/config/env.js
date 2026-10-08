@@ -30,19 +30,22 @@ const env = {
   github: {
     clientId: process.env.GITHUB_CLIENT_ID || '',
     clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
-    callbackUrl: process.env.GITHUB_CALLBACK_URL || 'http://localhost:5000/api/v1/github/callback',
+    token: process.env.GITHUB_TOKEN || '',
+    callbackUrl: process.env.GITHUB_CALLBACK_URL || 'http://localhost:5002/api/v1/github/callback',
     apiBaseUrl: process.env.GITHUB_API_URL || 'https://api.github.com',
   },
 
   gitlab: {
     clientId: process.env.GITLAB_CLIENT_ID || '',
     clientSecret: process.env.GITLAB_CLIENT_SECRET || '',
-    callbackUrl: process.env.GITLAB_CALLBACK_URL || 'http://localhost:5000/api/v1/gitlab/callback',
-    apiBaseUrl: process.env.GITLAB_API_URL || 'https://gitlab.com/api/v4',
+    token: process.env.GITLAB_TOKEN || '',
+    callbackUrl: process.env.GITLAB_CALLBACK_URL || 'http://localhost:5002/api/v1/gitlab/callback',
+    baseUrl: process.env.GITLAB_URL || 'http://192.168.10.10:8080',
+    apiBaseUrl: process.env.GITLAB_API_URL || 'http://192.168.10.10:8080/api/v4',
   },
 
   webhook: {
-    baseUrl: process.env.WEBHOOK_BASE_URL || 'http://localhost:5000/api/v1/webhooks',
+    baseUrl: process.env.WEBHOOK_BASE_URL || 'http://localhost:5002/api/v1/webhooks',
     secret: process.env.WEBHOOK_SECRET || 'super_secret_webhook_verification_token',
   },
 };

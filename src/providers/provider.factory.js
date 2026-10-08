@@ -2,6 +2,7 @@ const GitHubProvider = require('./github.provider');
 const GitLabProvider = require('./gitlab.provider');
 const githubAccountRepository = require('../repositories/github-account.repository');
 const gitlabAccountRepository = require('../repositories/gitlab-account.repository');
+const env = require('../config/env');
 const { decrypt } = require('../utils/crypto.util');
 const { BadRequestError, NotFoundError } = require('../utils/response');
 
@@ -16,17 +17,23 @@ class ProviderFactory {
       return new GitHubProvider(tokenOverride);
     }
 
-    const account = await githubAccountRepository.findByUserId(userId);
-    if (!account || !account.isConnected || !account.accessToken) {
-      throw new BadRequestError('GitHub account is not connected. Please connect your GitHub account first.');
+    try {
+      const account = await githubAccountRepository.findByUserId(userId);
+      if (account && account.isConnected && account.accessToken) {
+        const token = decrypt(account.accessToken);
+        if (token) {
+          return new GitHubProvider(token);
+        }
+      }
+    } catch {
+      // Database not ready or record not found
     }
 
-    const token = decrypt(account.accessToken);
-    if (!token) {
-      throw new BadRequestError('Failed to decrypt GitHub access token. Please reconnect GitHub.');
+    if (env.github.token) {
+      return new GitHubProvider(env.github.token);
     }
 
-    return new GitHubProvider(token);
+    throw new BadRequestError('GitHub account is not connected. Please connect your GitHub account first.');
   }
 
   /**
@@ -39,17 +46,47 @@ class ProviderFactory {
       return new GitLabProvider(tokenOverride);
     }
 
-    const account = await gitlabAccountRepository.findByUserId(userId);
-    if (!account || !account.isConnected || !account.accessToken) {
-      throw new BadRequestError('GitLab account is not connected. Please connect your GitLab account first.');
+    try {
+      const account = await gitlabAccountRepository.findByUserId(userId);
+      if (account && account.isConnected && account.accessToken) {
+        const token = decrypt(account.accessToken);
+        if (token) {
+          return new GitLabProvider(token);
+        }
+      }
+    } catch {
+      // Database not ready or record not found
     }
 
-    const token = decrypt(account.accessToken);
-    if (!token) {
-      throw new BadRequestError('Failed to decrypt GitLab access token. Please reconnect GitLab.');
+    if (env.gitlab.token) {
+      return new GitLabProvider(env.gitlab.token);
     }
 
-    return new GitLabProvider(token);
+    throw new BadRequestError('GitLab account is not connected. Please connect your GitLab account first.');
+  }
+
+  /**
+   * Get decrypted tokens for both platforms for user
+   */
+  async getTokens(userId) {
+    let ghToken = env.github.token;
+    let glToken = env.gitlab.token;
+
+    try {
+      const ghAccount = await githubAccountRepository.findByUserId(userId);
+      if (ghAccount && ghAccount.isConnected && ghAccount.accessToken) {
+        ghToken = decrypt(ghAccount.accessToken);
+      }
+    } catch {}
+
+    try {
+      const glAccount = await gitlabAccountRepository.findByUserId(userId);
+      if (glAccount && glAccount.isConnected && glAccount.accessToken) {
+        glToken = decrypt(glAccount.accessToken);
+      }
+    } catch {}
+
+    return { ghToken, glToken };
   }
 }
 

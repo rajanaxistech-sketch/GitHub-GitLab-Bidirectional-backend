@@ -21,3 +21,6 @@ Thumbs.db
 # Coverage / Tests
 coverage/
 .nyc_output/
+
+# IDE
+.vscode/

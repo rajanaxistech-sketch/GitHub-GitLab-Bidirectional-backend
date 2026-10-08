@@ -1,3 +1,7 @@
+const { execSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const repositoryMappingRepository = require('../repositories/repository-mapping.repository');
 const githubAccountRepository = require('../repositories/github-account.repository');
 const gitlabAccountRepository = require('../repositories/gitlab-account.repository');
@@ -186,6 +190,312 @@ class RepositoryMappingService {
 
     await repositoryMappingRepository.delete(mappingId);
     return { success: true, message: 'Mapping deleted successfully' };
+  }
+
+  /**
+   * Generate detailed repository audit report comparing GitHub and GitLab repositories
+   */
+  async getAuditReport(userId) {
+    let githubRepos = [];
+    let gitlabRepos = [];
+    let githubProvider = null;
+    let gitlabProvider = null;
+
+    try {
+      githubProvider = await providerFactory.getGitHubProvider(userId);
+      githubRepos = await githubProvider.getRepositories({ affiliation: 'owner' });
+    } catch (e) {
+      logger.warn('Could not fetch GitHub repos for audit:', e.message);
+    }
+
+    try {
+      gitlabProvider = await providerFactory.getGitLabProvider(userId);
+      gitlabRepos = await gitlabProvider.getRepositories();
+    } catch (e) {
+      logger.warn('Could not fetch GitLab repos for audit:', e.message);
+    }
+
+    const formatStatus = (commit) => {
+      if (!commit) return 'No commits yet';
+      const d = new Date(commit.date);
+      const isToday = new Date().toDateString() === d.toDateString();
+      const dateStr = isToday
+        ? `Today, ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+        : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const msg = (commit.message || '').split('\n')[0].substring(0, 30);
+      return `Latest (${dateStr}: ${msg})`;
+    };
+
+    const mappings = await repositoryMappingRepository.findByUserId(userId);
+    const processedGlIds = new Set();
+
+    // 1. Process all GitHub repositories in parallel
+    const ghReportPromises = githubRepos.map(async (ghRepo) => {
+      const glMatch = gitlabRepos.find((r) => {
+        if (r.name.toLowerCase() === ghRepo.name.toLowerCase()) return true;
+        const normGh = ghRepo.name.toLowerCase().replace(/[._]/g, '-');
+        const normGl = r.name.toLowerCase().replace(/[._]/g, '-');
+        return normGh === normGl;
+      });
+
+      if (glMatch) {
+        processedGlIds.add(glMatch.id);
+      }
+
+      const mapping = mappings.find(
+        (m) => m.githubRepoFullName?.toLowerCase() === ghRepo.fullName?.toLowerCase()
+      );
+
+      // Concurrent fetch for GitHub and GitLab commits
+      const [ghCommitRes, glCommitRes] = await Promise.allSettled([
+        githubProvider.getCommits(
+          ghRepo.owner,
+          ghRepo.name,
+          ghRepo.defaultBranch || 'main',
+          1
+        ),
+        glMatch
+          ? gitlabProvider.getCommits(
+              glMatch.id,
+              glMatch.defaultBranch || 'main',
+              1
+            )
+          : Promise.resolve([]),
+      ]);
+
+      const ghCommit = ghCommitRes.status === 'fulfilled' ? ghCommitRes.value?.[0] || null : null;
+      const glCommit = glCommitRes.status === 'fulfilled' ? glCommitRes.value?.[0] || null : null;
+
+      let githubStatus = ghCommit ? formatStatus(ghCommit) : 'Empty repo';
+      let gitlabStatus = 'Not on GitLab yet';
+      let syncState = 'Needs Migration to GitLab';
+      let syncBadge = 'warning';
+
+      if (glMatch) {
+        gitlabStatus = glCommit ? formatStatus(glCommit) : 'Empty repo';
+
+        if (ghCommit && glCommit && ghCommit.sha === glCommit.sha) {
+          syncState = 'Identical (In Sync)';
+          syncBadge = 'success';
+        } else if (!ghCommit && !glCommit) {
+          syncState = 'Identical (In Sync)';
+          syncBadge = 'success';
+        } else if (ghCommit && glCommit) {
+          const ghTime = new Date(ghCommit.date).getTime();
+          const glTime = new Date(glCommit.date).getTime();
+          if (ghTime > glTime) {
+            syncState = 'GitHub Ahead';
+            syncBadge = 'brand';
+          } else if (glTime > ghTime) {
+            syncState = 'GitLab Ahead';
+            syncBadge = 'info';
+          } else {
+            syncState = 'Commits Differ';
+            syncBadge = 'warning';
+          }
+        } else if (!glCommit && ghCommit) {
+          syncState = 'Needs Initial Push to GitLab';
+          syncBadge = 'warning';
+        }
+      }
+
+      return {
+        repositoryName: ghRepo.name,
+        githubRepoFullName: ghRepo.fullName,
+        gitlabProjectFullPath: glMatch?.fullName || null,
+        githubHtmlUrl: ghRepo.htmlUrl,
+        gitlabHtmlUrl: glMatch?.htmlUrl || null,
+        githubDefaultBranch: ghRepo.defaultBranch || 'main',
+        gitlabDefaultBranch: glMatch?.defaultBranch || 'main',
+        githubStatus,
+        gitlabStatus,
+        syncState,
+        syncBadge,
+        mappingId: mapping?.id || null,
+        isMapped: Boolean(mapping),
+        canQuickSync: Boolean(glMatch),
+      };
+    });
+
+    const ghReportResults = await Promise.all(ghReportPromises);
+
+    // 2. Process GitLab-only repositories in parallel
+    const glOnlyRepos = gitlabRepos.filter((r) => !processedGlIds.has(r.id));
+    const glOnlyPromises = glOnlyRepos.map(async (glRepo) => {
+      let glCommit = null;
+      try {
+        const glCommits = await gitlabProvider.getCommits(
+          glRepo.id,
+          glRepo.defaultBranch || 'main',
+          1
+        );
+        glCommit = glCommits[0] || null;
+      } catch {}
+
+      return {
+        repositoryName: glRepo.name,
+        githubRepoFullName: null,
+        gitlabProjectFullPath: glRepo.fullName,
+        githubHtmlUrl: null,
+        gitlabHtmlUrl: glRepo.htmlUrl,
+        githubDefaultBranch: 'main',
+        gitlabDefaultBranch: glRepo.defaultBranch || 'main',
+        githubStatus: 'Not on GitHub',
+        gitlabStatus: glCommit ? formatStatus(glCommit) : 'Empty repo',
+        syncState: 'GitLab Only',
+        syncBadge: 'neutral',
+        mappingId: null,
+        isMapped: false,
+        canQuickSync: false,
+      };
+    });
+
+    const glOnlyResults = await Promise.all(glOnlyPromises);
+
+    return [...ghReportResults, ...glOnlyResults];
+  }
+
+  /**
+   * Automatically create missing repository on target platform, push commits/branches, and establish bidirectional mapping
+   * @param {string} userId
+   * @param {Object} options
+   */
+  async autoCreateAndSync(userId, options = {}) {
+    const {
+      sourcePlatform,
+      sourceRepoFullName,
+      targetRepoName,
+      isPrivate = true,
+      syncDirection = 'bidirectional',
+    } = options;
+
+    if (!sourcePlatform || !sourceRepoFullName) {
+      throw new BadRequestError('sourcePlatform and sourceRepoFullName are required');
+    }
+
+    const githubProvider = await providerFactory.getGitHubProvider(userId);
+    const gitlabProvider = await providerFactory.getGitLabProvider(userId);
+    const { ghToken, glToken } = await providerFactory.getTokens(userId);
+
+    let githubRepoFullName = null;
+    let gitlabProjectFullPath = null;
+    let githubRepoId = null;
+    let gitlabProjectId = null;
+    let repoBaseName = '';
+
+    const tempDir = path.join(
+      os.tmpdir(),
+      `sync_mirror_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.git`
+    );
+
+    if (sourcePlatform === 'github') {
+      const [ghOwner, ghName] = sourceRepoFullName.split('/');
+      repoBaseName = targetRepoName || ghName;
+      const ghRepo = await githubProvider.getRepository(ghOwner, ghName);
+      githubRepoFullName = ghRepo.fullName;
+      githubRepoId = ghRepo.id;
+
+      const glRepos = await gitlabProvider.getRepositories();
+      let glProject = glRepos.find(
+        (r) =>
+          r.name.toLowerCase() === repoBaseName.toLowerCase() ||
+          r.name.toLowerCase().replace(/[._]/g, '-') === repoBaseName.toLowerCase().replace(/[._]/g, '-')
+      );
+
+      if (!glProject) {
+        logger.info(`Auto-creating project '${repoBaseName}' on GitLab...`);
+        glProject = await gitlabProvider.createRepository(repoBaseName, {
+          description: ghRepo.description || 'Synchronized from GitHub',
+          isPrivate: ghRepo.isPrivate !== undefined ? ghRepo.isPrivate : isPrivate,
+          initializeWithReadme: false,
+        });
+      }
+
+      gitlabProjectFullPath = glProject.fullName;
+      gitlabProjectId = glProject.id;
+
+      const ghCloneUrl = `https://x-access-token:${ghToken}@github.com/${githubRepoFullName}.git`;
+      const glBaseUrlClean = env.gitlab.apiBaseUrl.replace('/api/v4', '').replace(/^https?:\/\//, '');
+      const glPushUrl = `http://oauth2:${glToken}@${glBaseUrlClean}/${gitlabProjectFullPath}.git`;
+
+      try {
+        logger.info(`Mirror cloning from GitHub: ${githubRepoFullName}`);
+        execSync(`git clone --mirror "${ghCloneUrl}" "${tempDir}"`, { stdio: 'pipe' });
+        logger.info(`Mirror pushing to GitLab: ${gitlabProjectFullPath}`);
+        execSync(`git push --mirror "${glPushUrl}"`, { cwd: tempDir, stdio: 'pipe' });
+      } catch (gitErr) {
+        logger.warn('Git mirror push encountered warning/error:', gitErr.message);
+      } finally {
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch {}
+      }
+    } else {
+      const glProject = await gitlabProvider.getRepository(sourceRepoFullName);
+      repoBaseName = targetRepoName || glProject.name;
+      gitlabProjectFullPath = glProject.fullName;
+      gitlabProjectId = glProject.id;
+
+      const ghRepos = await githubProvider.getRepositories({ affiliation: 'owner' });
+      let ghRepo = ghRepos.find(
+        (r) =>
+          r.name.toLowerCase() === repoBaseName.toLowerCase() ||
+          r.name.toLowerCase().replace(/[._]/g, '-') === repoBaseName.toLowerCase().replace(/[._]/g, '-')
+      );
+
+      if (!ghRepo) {
+        logger.info(`Auto-creating repository '${repoBaseName}' on GitHub...`);
+        ghRepo = await githubProvider.createRepository(repoBaseName, {
+          description: glProject.description || 'Synchronized from GitLab',
+          isPrivate: glProject.isPrivate !== undefined ? glProject.isPrivate : isPrivate,
+          autoInit: false,
+        });
+      }
+
+      githubRepoFullName = ghRepo.fullName;
+      githubRepoId = ghRepo.id;
+
+      const glBaseUrlClean = env.gitlab.apiBaseUrl.replace('/api/v4', '').replace(/^https?:\/\//, '');
+      const glCloneUrl = `http://oauth2:${glToken}@${glBaseUrlClean}/${gitlabProjectFullPath}.git`;
+      const ghPushUrl = `https://x-access-token:${ghToken}@github.com/${githubRepoFullName}.git`;
+
+      try {
+        logger.info(`Mirror cloning from GitLab: ${gitlabProjectFullPath}`);
+        execSync(`git clone --mirror "${glCloneUrl}" "${tempDir}"`, { stdio: 'pipe' });
+        logger.info(`Mirror pushing to GitHub: ${githubRepoFullName}`);
+        execSync(`git push --mirror "${ghPushUrl}"`, { cwd: tempDir, stdio: 'pipe' });
+      } catch (gitErr) {
+        logger.warn('Git mirror push encountered warning/error:', gitErr.message);
+      } finally {
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch {}
+      }
+    }
+
+    let mapping = await repositoryMappingRepository.findExistingMapping(
+      userId,
+      githubRepoFullName,
+      gitlabProjectFullPath
+    );
+
+    if (!mapping) {
+      mapping = await this.createMapping(userId, {
+        githubRepoFullName,
+        gitlabProjectFullPath,
+        githubRepoId,
+        gitlabProjectId,
+        syncDirection,
+        autoSyncEnabled: true,
+        initialSync: false,
+      });
+    }
+
+    return {
+      mapping,
+      githubRepoFullName,
+      gitlabProjectFullPath,
+    };
   }
 }
 

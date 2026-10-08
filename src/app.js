@@ -27,6 +27,19 @@ if (!env.isProduction) {
   app.use(morgan('combined'));
 }
 
+// Root welcome route
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'GitHub-GitLab Bidirectional Sync Backend API is running',
+    version: '1.0.0',
+    endpoints: {
+      health: '/api/v1/health',
+      api: '/api/v1',
+    },
+  });
+});
+
 // Mount API Routes under /api/v1 prefix
 app.use('/api/v1', apiRoutes);
 

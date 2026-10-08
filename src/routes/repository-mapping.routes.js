@@ -8,6 +8,8 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/', asyncHandler(repositoryMappingController.getMappings.bind(repositoryMappingController)));
+router.get('/audit', asyncHandler(repositoryMappingController.getAuditReport.bind(repositoryMappingController)));
+router.post('/auto-create', asyncHandler(repositoryMappingController.autoCreateAndSync.bind(repositoryMappingController)));
 router.post('/', asyncHandler(repositoryMappingController.createMapping.bind(repositoryMappingController)));
 router.get('/:id', asyncHandler(repositoryMappingController.getMappingById.bind(repositoryMappingController)));
 router.put('/:id', asyncHandler(repositoryMappingController.updateMapping.bind(repositoryMappingController)));

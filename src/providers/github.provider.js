@@ -49,7 +49,7 @@ class GitHubProvider extends GitProviderInterface {
           per_page: options.perPage || 100,
           sort: 'updated',
           direction: 'desc',
-          affiliation: 'owner,collaborator,organization_member',
+          affiliation: options.affiliation || 'owner',
         },
       });
 
@@ -260,7 +260,7 @@ class GitHubProvider extends GitProviderInterface {
         name,
         description: options.description || 'Synchronized repository',
         private: options.isPrivate !== undefined ? options.isPrivate : false,
-        auto_init: true,
+        auto_init: options.autoInit || false,
       });
 
       return {

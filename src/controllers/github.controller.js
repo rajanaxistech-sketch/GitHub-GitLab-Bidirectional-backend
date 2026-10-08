@@ -31,7 +31,8 @@ class GitHubController {
   }
 
   async getRepositories(req, res) {
-    const repos = await githubService.getRepositories(req.user.id);
+    const { affiliation = 'owner', perPage } = req.query;
+    const repos = await githubService.getRepositories(req.user.id, { affiliation, perPage: perPage ? parseInt(perPage, 10) : 100 });
     return sendSuccess(res, 'GitHub repositories retrieved', repos);
   }
 
